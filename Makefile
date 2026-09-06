@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
+
+ifneq ($(KERNELRELEASE),)
+
 obj-$(CONFIG_RTLWIFI) 		+= rtlwifi.o
 rtlwifi-objs	:=		\
 		base.o		\
@@ -33,3 +36,37 @@ obj-$(CONFIG_RTLBTCOEXIST)	+= btcoexist/
 obj-$(CONFIG_RTL8723_COMMON)	+= rtl8723com/
 obj-$(CONFIG_RTL8821AE)		+= rtl8821ae/
 obj-$(CONFIG_RTL8192EE)		+= rtl8192ee/
+
+else
+
+KDIR ?= /lib/modules/$(shell uname -r)/build
+MO ?= $(CURDIR)/build
+
+STANDALONE_CONFIG := \
+	CONFIG_RTLWIFI=m \
+	CONFIG_RTLWIFI_PCI=m \
+	CONFIG_RTLWIFI_USB=m \
+	CONFIG_RTL8192C_COMMON=m \
+	CONFIG_RTL8192D_COMMON=m \
+	CONFIG_RTL8723_COMMON=m \
+	CONFIG_RTLBTCOEXIST=m \
+	CONFIG_RTL8192CE=m \
+	CONFIG_RTL8192CU=m \
+	CONFIG_RTL8192SE=m \
+	CONFIG_RTL8192DE=m \
+	CONFIG_RTL8192DU=m \
+	CONFIG_RTL8723AE=m \
+	CONFIG_RTL8723BE=m \
+	CONFIG_RTL8188EE=m \
+	CONFIG_RTL8192EE=m \
+	CONFIG_RTL8821AE=m
+
+.PHONY: all modules clean
+
+all modules:
+	$(MAKE) -C $(KDIR) M=$(CURDIR) MO=$(MO) $(STANDALONE_CONFIG) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(CURDIR) MO=$(MO) clean
+
+endif

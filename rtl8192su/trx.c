@@ -90,15 +90,8 @@ int rtl92su_endpoint_layout(struct ieee80211_hw *hw)
 				    required[i]))
 			return -EINVAL;
 
-	if (layout == 11) {
-		if (rtlusb->in_ep_nums != 2 ||
-		    !rtl92su_has_ep(rtlusb->in_eps, rtlusb->in_ep_nums, 3) ||
-		    !rtl92su_has_ep(rtlusb->in_eps, rtlusb->in_ep_nums, 9))
-			return -EINVAL;
-	} else if (rtlusb->in_ep_nums != 1 ||
-		   !rtl92su_has_ep(rtlusb->in_eps, rtlusb->in_ep_nums, 3)) {
+	if (rtlusb->in_ep != 3)
 		return -EINVAL;
-	}
 
 	switch ((map[offsetof(struct r92su_eeprom, usb_optional)] >> 3) & 3) {
 	case 0:
@@ -809,17 +802,7 @@ void rtl92su_tx_cleanup(struct ieee80211_hw *hw, struct sk_buff *skb)
 int rtl92su_tx_post_hdl(struct ieee80211_hw *hw, struct urb *urb,
 			struct sk_buff *skb)
 {
-	struct ieee80211_tx_info *info;
-	bool no_ack;
-
-	skb_pull(skb, RTL_TX_HEADER_SIZE);
-	info = IEEE80211_SKB_CB(skb);
-	no_ack = info->flags & IEEE80211_TX_CTL_NO_ACK;
-	ieee80211_tx_info_clear_status(info);
-	if (!urb->status && no_ack)
-		info->flags |= IEEE80211_TX_STAT_NOACK_TRANSMITTED;
-	ieee80211_tx_status_irqsafe(hw, skb);
-	return 1;
+	return 0;
 }
 
 struct sk_buff *rtl92su_tx_aggregate_hdl(struct ieee80211_hw *hw,

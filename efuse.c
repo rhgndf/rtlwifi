@@ -350,6 +350,7 @@ done:
 out:
 	kfree(efuse_tbl);
 }
+EXPORT_SYMBOL_GPL(read_efuse);
 
 bool efuse_shadow_update_chk(struct ieee80211_hw *hw)
 {

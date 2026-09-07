@@ -764,6 +764,61 @@ void rtl92su_stop_rate_work(struct ieee80211_hw *hw)
 	skb_queue_purge(&su->rate_queue);
 }
 
+static int rtl92su_firmware_set_h2c_cmd(struct ieee80211_hw *hw,
+					u32 element_id, u32 rsvd,
+					const u8 *cmd_buffer, u32 cmd_len)
+{
+	struct rtl_priv *rtlpriv = rtl_priv(hw);
+	struct rtl_hal *rtlhal = rtl_hal(rtlpriv);
+	struct rtl_tcb_desc *cb_desc;
+	struct sk_buff *skb;
+	unsigned long flags;
+	u32 payload_len;
+	__le32 *header;
+	int ret = 0;
+
+	if (element_id > U8_MAX || cmd_len > U16_MAX ||
+	    (cmd_len && !cmd_buffer))
+		return -EINVAL;
+	if (cmd_len > MAX_TRANSMIT_BUFFER_SIZE - H2C_TX_CMD_HDR_LEN)
+		return -EMSGSIZE;
+
+	payload_len = ALIGN(cmd_len, 8);
+	if (payload_len > MAX_TRANSMIT_BUFFER_SIZE - H2C_TX_CMD_HDR_LEN)
+		return -EMSGSIZE;
+
+	spin_lock_irqsave(&rtlpriv->locks.h2c_lock, flags);
+	skb = alloc_skb(RTL_TX_HEADER_SIZE + H2C_TX_CMD_HDR_LEN + payload_len,
+			GFP_ATOMIC);
+	if (!skb) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	skb_reserve(skb, RTL_TX_HEADER_SIZE);
+	header = (__le32 *)skb_put(skb, H2C_TX_CMD_HDR_LEN + payload_len);
+	memset(header, 0, H2C_TX_CMD_HDR_LEN + payload_len);
+	le32p_replace_bits(&header[0], cmd_len, GENMASK(15, 0));
+	le32p_replace_bits(&header[0], element_id, GENMASK(23, 16));
+	rtlhal->h2c_txcmd_seq %= 0x80;
+	le32p_replace_bits(&header[0], rtlhal->h2c_txcmd_seq,
+			   GENMASK(30, 24));
+	rtlhal->h2c_txcmd_seq++;
+	header[1] = cpu_to_le32(rsvd);
+	if (cmd_len)
+		memcpy(header + 2, cmd_buffer, cmd_len);
+
+	cb_desc = (struct rtl_tcb_desc *)skb->cb;
+	cb_desc->cmd_or_init = DESC_PACKET_TYPE_NORMAL;
+	cb_desc->last_inipkt = false;
+	if (!rtl92su_cmd_send_packet(hw, skb)) {
+		kfree_skb(skb);
+		ret = -EIO;
+	}
+out:
+	spin_unlock_irqrestore(&rtlpriv->locks.h2c_lock, flags);
+	return ret;
+}
+
 int rtl92su_update_beacon(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
@@ -787,8 +842,8 @@ int rtl92su_update_beacon(struct ieee80211_hw *hw)
 						QSLT_CMD, &tcb_desc);
 
 		extra = (u32)offs.tim_offset << 16;
-		err = rtl92s_firmware_set_h2c_cmd(hw, H2C_UPDATE_BCN_CMD,
-						  extra, skb->data, skb->len);
+		err = rtl92su_firmware_set_h2c_cmd(hw, H2C_UPDATE_BCN_CMD,
+						   extra, skb->data, skb->len);
 		dev_kfree_skb_any(skb);
 	}
 	return err;

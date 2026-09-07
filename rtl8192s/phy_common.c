@@ -950,7 +950,7 @@ bool rtl92s_phy_send_fw_cmd(struct ieee80211_hw *hw, u32 cmd,
 	if (data)
 		rtl_write_dword(rtlpriv, RF_BB_CMD_DATA, *data);
 	rtl_write_dword(rtlpriv, WFM5, cmd);
-	if ((wait || usb) && !rtl92s_phy_chk_fwcmd_iodone(hw))
+	if ((wait || usb) && !rtl92s_phy_chk_fwcmd_iodone(hw) && usb)
 		status = false;
 out:
 	if (usb)
@@ -968,7 +968,7 @@ static bool _rtl92s_phy_set_fwcmd_io(struct ieee80211_hw *hw)
 	u32 input, current_aid = 0;
 
 	if (is_hal_stop(rtlhal))
-		return false;
+		return rtlhal->interface != INTF_USB;
 
 	if (hal_get_firmwareversion(rtlpriv) < 0x34)
 		goto skip;
@@ -1092,7 +1092,8 @@ skip:
 		break;
 	}
 
-	if (!rtl92s_phy_chk_fwcmd_iodone(hw))
+	if (!rtl92s_phy_chk_fwcmd_iodone(hw) &&
+	    rtlhal->interface == INTF_USB)
 		goto fail;
 
 	/* Clear FW CMD operation flag. */
@@ -1315,7 +1316,23 @@ bool rtl92s_phy_set_fw_cmd(struct ieee80211_hw *hw, enum fwcmd_iotype fw_cmdio)
 		}
 	} while (false);
 
-	/* Commands handled through the FW I/O map complete synchronously. */
+	if (rtlhal->interface != INTF_USB) {
+		/* We shall post processing these FW CMD if
+		 * variable postprocessing is set.
+		 */
+		if (postprocessing && !rtlhal->set_fwcmd_inprogress) {
+			rtlhal->set_fwcmd_inprogress = true;
+			/* Update current FW Cmd for callback use. */
+			rtlhal->current_fwcmd_io = fw_cmdio;
+		} else {
+			return false;
+		}
+
+		_rtl92s_phy_set_fwcmd_io(hw);
+		return true;
+	}
+
+	/* USB FW I/O transactions complete synchronously. */
 	if (!postprocessing)
 		return true;
 

@@ -488,6 +488,10 @@ static void _rtl_rx_work(struct tasklet_struct *t)
 			dev_kfree_skb_any(skb);
 			continue;
 		}
+		if (rtlusb->usb_rx_hdl) {
+			rtlusb->usb_rx_hdl(hw, skb);
+			continue;
+		}
 
 		if (likely(!rtlusb->usb_rx_segregate_hdl)) {
 			_rtl_usb_rx_process_noagg(hw, skb);

@@ -5,10 +5,14 @@
 #include "../core.h"
 #include "../base.h"
 #include "../pci.h"
-#include "reg.h"
-#include "def.h"
+#include "../rtl8192s/reg.h"
+#include "../rtl8192s/def.h"
+#include "../rtl8192s/phy_common.h"
+#include "../rtl8192s/dm_common.h"
+#include "../rtl8192s/fw_common.h"
+#include "../rtl8192s/hw_common.h"
+#include "../rtl8192s/trx_common.h"
 #include "phy.h"
-#include "dm.h"
 #include "fw.h"
 #include "hw.h"
 #include "trx.h"
@@ -179,6 +183,12 @@ static int rtl92s_init_sw_vars(struct ieee80211_hw *hw)
 	rtlpriv->rtlhal.pfirmware = vzalloc(sizeof(struct rt_firmware));
 	if (!rtlpriv->rtlhal.pfirmware)
 		return 1;
+	((struct rt_firmware *)rtlpriv->rtlhal.pfirmware)->cmd_send_packet =
+		rtl92se_cmd_send_packet;
+	((struct rt_firmware *)rtlpriv->rtlhal.pfirmware)->fw_set_rqpn =
+		rtl92se_fw_set_rqpn;
+	((struct rt_firmware *)rtlpriv->rtlhal.pfirmware)->fw_download_poll =
+		rtl92se_fw_download_poll;
 
 	rtlpriv->max_fw_size = RTL8190_MAX_FIRMWARE_CODE_SIZE*2 +
 			       sizeof(struct fw_hdr);
@@ -232,36 +242,36 @@ static const struct rtl_hal_ops rtl8192se_hal_ops = {
 	.hw_resume = rtl92se_resume,
 	.enable_interrupt = rtl92se_enable_interrupt,
 	.disable_interrupt = rtl92se_disable_interrupt,
-	.set_network_type = rtl92se_set_network_type,
-	.set_chk_bssid = rtl92se_set_check_bssid,
-	.set_qos = rtl92se_set_qos,
-	.set_bcn_reg = rtl92se_set_beacon_related_registers,
-	.set_bcn_intv = rtl92se_set_beacon_interval,
+	.set_network_type = rtl92s_set_network_type,
+	.set_chk_bssid = rtl92s_set_check_bssid,
+	.set_qos = rtl92s_set_qos,
+	.set_bcn_reg = rtl92s_set_beacon_related_registers,
+	.set_bcn_intv = rtl92s_set_beacon_interval,
 	.update_interrupt_mask = rtl92se_update_interrupt_mask,
 	.get_hw_reg = rtl92se_get_hw_reg,
 	.set_hw_reg = rtl92se_set_hw_reg,
-	.update_rate_tbl = rtl92se_update_hal_rate_tbl,
+	.update_rate_tbl = rtl92s_update_hal_rate_tbl,
 	.fill_tx_desc = rtl92se_tx_fill_desc,
 	.fill_tx_cmddesc = rtl92se_tx_fill_cmddesc,
-	.query_rx_desc = rtl92se_rx_query_desc,
-	.set_channel_access = rtl92se_update_channel_access_setting,
+	.query_rx_desc = rtl92s_rx_query_desc,
+	.set_channel_access = rtl92s_update_channel_access_setting,
 	.radio_onoff_checking = rtl92se_gpio_radio_on_off_checking,
 	.set_bw_mode = rtl92s_phy_set_bw_mode,
 	.switch_channel = rtl92s_phy_sw_chnl,
 	.dm_watchdog = rtl92s_dm_watchdog,
 	.scan_operation_backup = rtl92s_phy_scan_operation_backup,
-	.set_rf_power_state = rtl92s_phy_set_rf_power_state,
+	.set_rf_power_state = rtl92se_phy_set_rf_power_state,
 	.led_control = rtl92se_led_control,
 	.set_desc = rtl92se_set_desc,
 	.get_desc = rtl92se_get_desc,
 	.is_tx_desc_closed = rtl92se_is_tx_desc_closed,
 	.tx_polling = rtl92se_tx_polling,
-	.enable_hw_sec = rtl92se_enable_hw_security_config,
-	.set_key = rtl92se_set_key,
+	.enable_hw_sec = rtl92s_enable_hw_security_config,
+	.set_key = rtl92s_set_key,
 	.get_bbreg = rtl92s_phy_query_bb_reg,
 	.set_bbreg = rtl92s_phy_set_bb_reg,
-	.get_rfreg = rtl92s_phy_query_rf_reg,
-	.set_rfreg = rtl92s_phy_set_rf_reg,
+	.get_rfreg = rtl92se_phy_query_rf_reg,
+	.set_rfreg = rtl92se_phy_set_rf_reg,
 	.get_btc_status = rtl_btc_status_false,
 };
 

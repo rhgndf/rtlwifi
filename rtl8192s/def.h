@@ -19,6 +19,7 @@
 #define QSLT_HIGH				0x11
 #define QSLT_MGNT				0x12
 #define QSLT_CMD				0x13
+#define RTL92S_TXCMD_QUEUE			5
 
 /* Tx Desc */
 #define TX_DESC_SIZE_RTL8192S			(16 * 4)

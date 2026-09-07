@@ -161,8 +161,7 @@ static void _rtl92s_dm_txpowertracking_callback_thermalmeter(
 			rtl_dbg(rtlpriv, COMP_POWER_TRACKING, DBG_LOUD,
 				"Write to FW Thermal Val = 0x%x\n", fw_cmd);
 
-			rtl_write_dword(rtlpriv, WFM5, fw_cmd);
-			rtl92s_phy_chk_fwcmd_iodone(hw);
+			rtl92s_phy_send_fw_cmd(hw, fw_cmd, NULL, true);
 		}
 	}
 
@@ -702,7 +701,7 @@ void rtl92s_dm_init(struct ieee80211_hw *hw)
 	_rtl92s_dm_init_txpowertracking_thermalmeter(hw);
 	_rtl92s_dm_init_dig(hw);
 
-	rtl_write_dword(rtlpriv, WFM5, FW_CCA_CHK_ENABLE);
+	rtl92s_phy_send_fw_cmd(hw, FW_CCA_CHK_ENABLE, NULL, false);
 }
 EXPORT_SYMBOL_GPL(rtl92s_dm_init);
 

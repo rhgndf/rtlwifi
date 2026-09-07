@@ -491,6 +491,7 @@ static void _rtl92s_phy_init_register_definition(struct ieee80211_hw *hw)
 
 static bool _rtl92s_phy_config_bb(struct ieee80211_hw *hw, u8 configtype)
 {
+	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
 	int i;
 	u32 *phy_reg_table;
 	u32 *agc_table;
@@ -499,8 +500,13 @@ static bool _rtl92s_phy_config_bb(struct ieee80211_hw *hw, u8 configtype)
 	agc_len = AGCTAB_ARRAYLENGTH;
 	agc_table = rtl8192seagctab_array;
 	/* Default RF_type: 2T2R */
-	phy_reg_len = PHY_REG_2T2RARRAYLENGTH;
-	phy_reg_table = rtl8192sephy_reg_2t2rarray;
+	if (rtlhal->interface == INTF_USB) {
+		phy_reg_len = RTL8192SU_PHY_REG_2T2RARRAYLENGTH;
+		phy_reg_table = rtl8192suphy_reg_2t2rarray;
+	} else {
+		phy_reg_len = PHY_REG_2T2RARRAYLENGTH;
+		phy_reg_table = rtl8192sephy_reg_2t2rarray;
+	}
 
 	if (configtype == BASEBAND_CONFIG_PHY_REG) {
 		for (i = 0; i < phy_reg_len; i = i + 2) {
@@ -560,12 +566,18 @@ static bool _rtl92s_phy_set_bb_to_diff_rf(struct ieee80211_hw *hw,
 static bool _rtl92s_phy_config_bb_with_pg(struct ieee80211_hw *hw,
 					  u8 configtype)
 {
+	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
 	int i;
 	u32 *phy_table_pg;
 	u16 phy_pg_len;
 
-	phy_pg_len = PHY_REG_ARRAY_PGLENGTH;
-	phy_table_pg = rtl8192sephy_reg_array_pg;
+	if (rtlhal->interface == INTF_USB) {
+		phy_pg_len = RTL8192SU_PHY_REG_ARRAY_PGLENGTH;
+		phy_table_pg = rtl8192suphy_reg_array_pg;
+	} else {
+		phy_pg_len = PHY_REG_ARRAY_PGLENGTH;
+		phy_table_pg = rtl8192sephy_reg_array_pg;
+	}
 
 	if (configtype == BASEBAND_CONFIG_PHY_REG) {
 		for (i = 0; i < phy_pg_len; i = i + 3) {
@@ -646,19 +658,30 @@ u8 rtl92s_phy_config_rf(struct ieee80211_hw *hw, enum radio_path rfpath)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_phy *rtlphy = &(rtlpriv->phy);
+	struct rtl_hal *rtlhal = rtl_hal(rtlpriv);
 	int i;
 	bool rtstatus = true;
 	u32 *radio_a_table;
 	u32 *radio_b_table;
 	u16 radio_a_tblen, radio_b_tblen;
 
-	radio_a_tblen = RADIOA_1T_ARRAYLENGTH;
-	radio_a_table = rtl8192seradioa_1t_array;
+	if (rtlhal->interface == INTF_USB) {
+		radio_a_tblen = RTL8192SU_RADIOA_1T_ARRAYLENGTH;
+		radio_a_table = rtl8192suradioa_1t_array;
+	} else {
+		radio_a_tblen = RADIOA_1T_ARRAYLENGTH;
+		radio_a_table = rtl8192seradioa_1t_array;
+	}
 
 	/* Using Green mode array table for RF_2T2R_GREEN */
 	if (rtlphy->rf_type == RF_2T2R_GREEN) {
-		radio_b_table = rtl8192seradiob_gm_array;
-		radio_b_tblen = RADIOB_GM_ARRAYLENGTH;
+		if (rtlhal->interface == INTF_USB) {
+			radio_b_table = rtl8192suradiob_gm_array;
+			radio_b_tblen = RTL8192SU_RADIOB_GM_ARRAYLENGTH;
+		} else {
+			radio_b_table = rtl8192seradiob_gm_array;
+			radio_b_tblen = RADIOB_GM_ARRAYLENGTH;
+		}
 	} else {
 		radio_b_table = rtl8192seradiob_array;
 		radio_b_tblen = RADIOB_ARRAYLENGTH;
@@ -701,12 +724,18 @@ u8 rtl92s_phy_config_rf(struct ieee80211_hw *hw, enum radio_path rfpath)
 bool rtl92s_phy_mac_config(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
+	struct rtl_hal *rtlhal = rtl_hal(rtlpriv);
 	u32 i;
 	u32 arraylength;
 	u32 *ptrarray;
 
-	arraylength = MAC_2T_ARRAYLENGTH;
-	ptrarray = rtl8192semac_2t_array;
+	if (rtlhal->interface == INTF_USB) {
+		arraylength = RTL8192SU_MAC_2T_ARRAYLENGTH;
+		ptrarray = rtl8192sumac_2t_array;
+	} else {
+		arraylength = MAC_2T_ARRAYLENGTH;
+		ptrarray = rtl8192semac_2t_array;
+	}
 
 	for (i = 0; i < arraylength; i = i + 2)
 		rtl_write_byte(rtlpriv, ptrarray[i], (u8)ptrarray[i + 1]);
@@ -877,7 +906,7 @@ void rtl92s_phy_set_txpower(struct ieee80211_hw *hw, u8	channel)
 }
 EXPORT_SYMBOL_GPL(rtl92s_phy_set_txpower);
 
-void rtl92s_phy_chk_fwcmd_iodone(struct ieee80211_hw *hw)
+bool rtl92s_phy_chk_fwcmd_iodone(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	u16 pollingcnt = 10000;
@@ -892,13 +921,43 @@ void rtl92s_phy_chk_fwcmd_iodone(struct ieee80211_hw *hw)
 			break;
 	} while (--pollingcnt);
 
-	if (pollingcnt == 0)
+	if (pollingcnt == 0) {
 		pr_err("Set FW Cmd fail!!\n");
+		return false;
+	}
+
+	return true;
 }
 EXPORT_SYMBOL_GPL(rtl92s_phy_chk_fwcmd_iodone);
 
+bool rtl92s_phy_send_fw_cmd(struct ieee80211_hw *hw, u32 cmd,
+			    const u32 *data, bool wait)
+{
+	struct rtl_priv *rtlpriv = rtl_priv(hw);
+	struct rtl_hal *rtlhal = rtl_hal(rtlpriv);
+	bool usb = rtlhal->interface == INTF_USB;
+	bool status = true;
 
-static void _rtl92s_phy_set_fwcmd_io(struct ieee80211_hw *hw)
+	if (usb)
+		mutex_lock(&rtlpriv->io.bb_mutex);
+	if (usb && !rtl92s_phy_chk_fwcmd_iodone(hw)) {
+		status = false;
+		goto out;
+	}
+	if (data)
+		rtl_write_dword(rtlpriv, RF_BB_CMD_DATA, *data);
+	rtl_write_dword(rtlpriv, WFM5, cmd);
+	if ((wait || usb) && !rtl92s_phy_chk_fwcmd_iodone(hw))
+		status = false;
+out:
+	if (usb)
+		mutex_unlock(&rtlpriv->io.bb_mutex);
+	return status;
+}
+EXPORT_SYMBOL_GPL(rtl92s_phy_send_fw_cmd);
+
+
+static bool _rtl92s_phy_set_fwcmd_io(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
@@ -906,7 +965,7 @@ static void _rtl92s_phy_set_fwcmd_io(struct ieee80211_hw *hw)
 	u32 input, current_aid = 0;
 
 	if (is_hal_stop(rtlhal))
-		return;
+		return false;
 
 	if (hal_get_firmwareversion(rtlpriv) < 0x34)
 		goto skip;
@@ -927,48 +986,48 @@ skip:
 	switch (rtlhal->current_fwcmd_io) {
 	case FW_CMD_RA_RESET:
 		rtl_dbg(rtlpriv, COMP_CMD, DBG_DMESG, "FW_CMD_RA_RESET\n");
-		rtl_write_dword(rtlpriv, WFM5, FW_RA_RESET);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
+		if (!rtl92s_phy_send_fw_cmd(hw, FW_RA_RESET, NULL, true))
+			goto fail;
 		break;
 	case FW_CMD_RA_ACTIVE:
 		rtl_dbg(rtlpriv, COMP_CMD, DBG_DMESG, "FW_CMD_RA_ACTIVE\n");
-		rtl_write_dword(rtlpriv, WFM5, FW_RA_ACTIVE);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
+		if (!rtl92s_phy_send_fw_cmd(hw, FW_RA_ACTIVE, NULL, true))
+			goto fail;
 		break;
 	case FW_CMD_RA_REFRESH_N:
 		rtl_dbg(rtlpriv, COMP_CMD, DBG_DMESG, "FW_CMD_RA_REFRESH_N\n");
 		input = FW_RA_REFRESH;
-		rtl_write_dword(rtlpriv, WFM5, input);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
-		rtl_write_dword(rtlpriv, WFM5, FW_RA_ENABLE_RSSI_MASK);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
+		if (!rtl92s_phy_send_fw_cmd(hw, input, NULL, true))
+			goto fail;
+		if (!rtl92s_phy_send_fw_cmd(hw, FW_RA_ENABLE_RSSI_MASK, NULL, true))
+			goto fail;
 		break;
 	case FW_CMD_RA_REFRESH_BG:
 		rtl_dbg(rtlpriv, COMP_CMD, DBG_DMESG,
 			"FW_CMD_RA_REFRESH_BG\n");
-		rtl_write_dword(rtlpriv, WFM5, FW_RA_REFRESH);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
-		rtl_write_dword(rtlpriv, WFM5, FW_RA_DISABLE_RSSI_MASK);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
+		if (!rtl92s_phy_send_fw_cmd(hw, FW_RA_REFRESH, NULL, true))
+			goto fail;
+		if (!rtl92s_phy_send_fw_cmd(hw, FW_RA_DISABLE_RSSI_MASK, NULL, true))
+			goto fail;
 		break;
 	case FW_CMD_RA_REFRESH_N_COMB:
 		rtl_dbg(rtlpriv, COMP_CMD, DBG_DMESG,
 			"FW_CMD_RA_REFRESH_N_COMB\n");
 		input = FW_RA_IOT_N_COMB;
-		rtl_write_dword(rtlpriv, WFM5, input);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
+		if (!rtl92s_phy_send_fw_cmd(hw, input, NULL, true))
+			goto fail;
 		break;
 	case FW_CMD_RA_REFRESH_BG_COMB:
 		rtl_dbg(rtlpriv, COMP_CMD, DBG_DMESG,
 			"FW_CMD_RA_REFRESH_BG_COMB\n");
 		input = FW_RA_IOT_BG_COMB;
-		rtl_write_dword(rtlpriv, WFM5, input);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
+		if (!rtl92s_phy_send_fw_cmd(hw, input, NULL, true))
+			goto fail;
 		break;
 	case FW_CMD_IQK_ENABLE:
 		rtl_dbg(rtlpriv, COMP_CMD, DBG_DMESG, "FW_CMD_IQK_ENABLE\n");
-		rtl_write_dword(rtlpriv, WFM5, FW_IQK_ENABLE);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
+		if (!rtl92s_phy_send_fw_cmd(hw, FW_IQK_ENABLE, NULL, true))
+			goto fail;
 		break;
 	case FW_CMD_PAUSE_DM_BY_SCAN:
 		/* Lower initial gain */
@@ -1003,37 +1062,43 @@ skip:
 	case FW_CMD_LPS_ENTER:
 		rtl_dbg(rtlpriv, COMP_CMD, DBG_DMESG, "FW_CMD_LPS_ENTER\n");
 		current_aid = rtlpriv->mac80211.assoc_id;
-		rtl_write_dword(rtlpriv, WFM5, (FW_LPS_ENTER |
-				((current_aid | 0xc000) << 8)));
-		rtl92s_phy_chk_fwcmd_iodone(hw);
+		if (!rtl92s_phy_send_fw_cmd(hw, (FW_LPS_ENTER |
+				((current_aid | 0xc000) << 8)), NULL, true))
+			goto fail;
 		/* FW set TXOP disable here, so disable EDCA
 		 * turbo mode until driver leave LPS */
 		break;
 	case FW_CMD_LPS_LEAVE:
 		rtl_dbg(rtlpriv, COMP_CMD, DBG_DMESG, "FW_CMD_LPS_LEAVE\n");
-		rtl_write_dword(rtlpriv, WFM5, FW_LPS_LEAVE);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
+		if (!rtl92s_phy_send_fw_cmd(hw, FW_LPS_LEAVE, NULL, true))
+			goto fail;
 		break;
 	case FW_CMD_ADD_A2_ENTRY:
 		rtl_dbg(rtlpriv, COMP_CMD, DBG_DMESG, "FW_CMD_ADD_A2_ENTRY\n");
-		rtl_write_dword(rtlpriv, WFM5, FW_ADD_A2_ENTRY);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
+		if (!rtl92s_phy_send_fw_cmd(hw, FW_ADD_A2_ENTRY, NULL, true))
+			goto fail;
 		break;
 	case FW_CMD_CTRL_DM_BY_DRIVER:
 		rtl_dbg(rtlpriv, COMP_CMD, DBG_LOUD,
 			"FW_CMD_CTRL_DM_BY_DRIVER\n");
-		rtl_write_dword(rtlpriv, WFM5, FW_CTRL_DM_BY_DRIVER);
-		rtl92s_phy_chk_fwcmd_iodone(hw);
+		if (!rtl92s_phy_send_fw_cmd(hw, FW_CTRL_DM_BY_DRIVER, NULL, true))
+			goto fail;
 		break;
 
 	default:
 		break;
 	}
 
-	rtl92s_phy_chk_fwcmd_iodone(hw);
+	if (!rtl92s_phy_chk_fwcmd_iodone(hw))
+		goto fail;
 
 	/* Clear FW CMD operation flag. */
 	rtlhal->set_fwcmd_inprogress = false;
+	return true;
+
+fail:
+	rtlhal->set_fwcmd_inprogress = false;
+	return false;
 }
 
 bool rtl92s_phy_set_fw_cmd(struct ieee80211_hw *hw, enum fwcmd_iotype fw_cmdio)
@@ -1258,8 +1323,7 @@ bool rtl92s_phy_set_fw_cmd(struct ieee80211_hw *hw, enum fwcmd_iotype fw_cmdio)
 		return false;
 	}
 
-	_rtl92s_phy_set_fwcmd_io(hw);
-	return true;
+	return _rtl92s_phy_set_fwcmd_io(hw);
 }
 EXPORT_SYMBOL_GPL(rtl92s_phy_set_fw_cmd);
 
@@ -1270,8 +1334,8 @@ void rtl92s_phy_set_beacon_hwreg(struct ieee80211_hw *hw, u16 beaconinterval)
 
 	if (hal_get_firmwareversion(rtlpriv) >= 0x33) {
 		/* Fw v.51 and later. */
-		rtl_write_dword(rtlpriv, WFM5, 0xF1000000 |
-				(beaconinterval << 8));
+		rtl92s_phy_send_fw_cmd(hw, 0xF1000000 |
+				       (beaconinterval << 8), NULL, false);
 	} else {
 		new_bcn_num = beaconinterval * 32 - 64;
 		rtl_write_dword(rtlpriv, WFM3 + 4, new_bcn_num);

@@ -7,6 +7,40 @@
 #include "def.h"
 #include "fw_common.h"
 
+int rtl92s_validate_fw(const u8 *data, size_t size)
+{
+	const struct fw_hdr *header;
+	size_t remaining;
+	u32 length;
+
+	if (!data || size < sizeof(*header) ||
+	    size > RTL8190_MAX_RAW_FIRMWARE_CODE_SIZE)
+		return -EINVAL;
+
+	header = (const struct fw_hdr *)data;
+	if (le16_to_cpu(header->signature) != 0x8192 ||
+	    le32_to_cpu(header->fw_priv_size) != sizeof(header->fwpriv))
+		return -EINVAL;
+
+	remaining = size - sizeof(*header);
+	length = le32_to_cpu(header->img_imem_size);
+	if (!length || length > RTL8190_MAX_FIRMWARE_CODE_SIZE ||
+	    length > remaining)
+		return -EINVAL;
+	remaining -= length;
+
+	length = le32_to_cpu(header->img_sram_size);
+	if (length > RTL8190_MAX_FIRMWARE_CODE_SIZE || length > remaining)
+		return -EINVAL;
+	remaining -= length;
+
+	if (le32_to_cpu(header->dmem_size) > remaining)
+		return -EINVAL;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rtl92s_validate_fw);
+
 static void rtl92s_fw_set_rqpn(struct ieee80211_hw *hw)
 {
 	struct rt_firmware *firmware =
@@ -106,6 +140,8 @@ static u8 _rtl92s_firmware_header_map_rftype(struct ieee80211_hw *hw)
 		return 0x12;
 	case RF_2T2R:
 		return 0x22;
+	case RF_2T2R_GREEN:
+		return 0x92;
 	default:
 		pr_err("Unknown RF type(%x)\n", rtlphy->rf_type);
 		break;
@@ -116,8 +152,11 @@ static u8 _rtl92s_firmware_header_map_rftype(struct ieee80211_hw *hw)
 static void _rtl92s_firmwareheader_priveupdate(struct ieee80211_hw *hw,
 		struct fw_priv *pfw_priv)
 {
+	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
+
 	/* Update RF types for RATR settings. */
 	pfw_priv->rf_config = _rtl92s_firmware_header_map_rftype(hw);
+	pfw_priv->hci_sel = rtlhal->interface == INTF_USB ? 2 : 1;
 }
 
 
@@ -125,6 +164,7 @@ static void _rtl92s_firmwareheader_priveupdate(struct ieee80211_hw *hw,
 static bool _rtl92s_firmware_downloadcode(struct ieee80211_hw *hw,
 		u8 *code_virtual_address, u32 buffer_len)
 {
+	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
 	struct sk_buff *skb;
 	struct rtl_tcb_desc *tcb_desc;
 	u16 frag_threshold = MAX_FIRMWARE_CODE_SIZE;
@@ -139,7 +179,8 @@ static bool _rtl92s_firmware_downloadcode(struct ieee80211_hw *hw,
 		return false;
 	}
 
-	extra_descoffset = 0;
+	extra_descoffset = rtlhal->interface == INTF_USB ?
+				RTL_TX_HEADER_SIZE : 0;
 
 	do {
 		if ((buffer_len - frag_offset) > frag_threshold) {
@@ -206,6 +247,7 @@ static bool _rtl92s_firmware_checkready(struct ieee80211_hw *hw,
 		if (!(cpustatus & IMEM_CHK_RPT) || (pollingcnt <= 0)) {
 			pr_err("FW_STATUS_LOAD_IMEM FAIL CPU, Status=%x\n",
 			       cpustatus);
+			rtstatus = false;
 			goto status_check_fail;
 		}
 		break;
@@ -223,6 +265,7 @@ static bool _rtl92s_firmware_checkready(struct ieee80211_hw *hw,
 		if (!(cpustatus & EMEM_CHK_RPT) || (pollingcnt <= 0)) {
 			pr_err("FW_STATUS_LOAD_EMEM FAIL CPU, Status=%x\n",
 			       cpustatus);
+			rtstatus = false;
 			goto status_check_fail;
 		}
 
@@ -246,6 +289,7 @@ static bool _rtl92s_firmware_checkready(struct ieee80211_hw *hw,
 		if (!(cpustatus & DMEM_CODE_DONE) || (pollingcnt <= 0)) {
 			pr_err("Polling DMEM code done fail ! cpustatus(%#x)\n",
 			       cpustatus);
+			rtstatus = false;
 			goto status_check_fail;
 		}
 
@@ -271,6 +315,7 @@ static bool _rtl92s_firmware_checkready(struct ieee80211_hw *hw,
 		    (pollingcnt <= 0)) {
 			pr_err("Polling Load Firmware ready fail ! cpustatus(%x)\n",
 			       cpustatus);
+			rtstatus = false;
 			goto status_check_fail;
 		}
 
@@ -317,9 +362,12 @@ int rtl92s_download_fw(struct ieee80211_hw *hw)
 	bool rtstatus = true;
 
 	if (rtlpriv->max_fw_size == 0 || !rtlhal->pfirmware)
-		return 1;
+		return 0;
 
 	firmware = (struct rt_firmware *)rtlhal->pfirmware;
+	if (rtl92s_validate_fw(firmware->sz_fw_tmpbuffer,
+			       firmware->sz_fw_tmpbufferlen))
+		return 0;
 	firmware->fwstatus = FW_STATUS_INIT;
 
 	puc_mappedfile = firmware->sz_fw_tmpbuffer;
@@ -327,17 +375,18 @@ int rtl92s_download_fw(struct ieee80211_hw *hw)
 	/* 1. Retrieve FW header. */
 	firmware->pfwheader = (struct fw_hdr *) puc_mappedfile;
 	pfwheader = firmware->pfwheader;
-	firmware->firmwareversion =  byte(pfwheader->version, 0);
-	firmware->pfwheader->fwpriv.hci_sel = 1;/* pcie */
+	firmware->firmwareversion = byte(le16_to_cpu(pfwheader->version), 0);
 
 	rtl_dbg(rtlpriv, COMP_INIT, DBG_LOUD,
 		"signature:%x, version:%x, size:%x, imemsize:%x, sram size:%x\n",
-		pfwheader->signature,
-		pfwheader->version, pfwheader->dmem_size,
-		pfwheader->img_imem_size, pfwheader->img_sram_size);
+		le16_to_cpu(pfwheader->signature),
+		le16_to_cpu(pfwheader->version), le32_to_cpu(pfwheader->dmem_size),
+		le32_to_cpu(pfwheader->img_imem_size),
+		le32_to_cpu(pfwheader->img_sram_size));
 
 	/* 2. Retrieve IMEM image. */
-	if ((pfwheader->img_imem_size == 0) || (pfwheader->img_imem_size >
+	firmware->fw_imem_len = le32_to_cpu(pfwheader->img_imem_size);
+	if ((firmware->fw_imem_len == 0) || (firmware->fw_imem_len >
 	    sizeof(firmware->fw_imem))) {
 		pr_err("memory for data image is less than IMEM required\n");
 		goto fail;
@@ -345,20 +394,19 @@ int rtl92s_download_fw(struct ieee80211_hw *hw)
 		puc_mappedfile += fwhdr_size;
 
 		memcpy(firmware->fw_imem, puc_mappedfile,
-		       pfwheader->img_imem_size);
-		firmware->fw_imem_len = pfwheader->img_imem_size;
+		       firmware->fw_imem_len);
 	}
 
 	/* 3. Retriecve EMEM image. */
-	if (pfwheader->img_sram_size > sizeof(firmware->fw_emem)) {
+	firmware->fw_emem_len = le32_to_cpu(pfwheader->img_sram_size);
+	if (firmware->fw_emem_len > sizeof(firmware->fw_emem)) {
 		pr_err("memory for data image is less than EMEM required\n");
 		goto fail;
 	} else {
 		puc_mappedfile += firmware->fw_imem_len;
 
 		memcpy(firmware->fw_emem, puc_mappedfile,
-		       pfwheader->img_sram_size);
-		firmware->fw_emem_len = pfwheader->img_sram_size;
+		       firmware->fw_emem_len);
 	}
 
 	/* 4. download fw now */
@@ -414,142 +462,71 @@ fail:
 }
 EXPORT_SYMBOL_GPL(rtl92s_download_fw);
 
-static u32 _rtl92s_fill_h2c_cmd(struct sk_buff *skb, u32 h2cbufferlen,
-				u32 cmd_num, u32 *pelement_id, u32 *pcmd_len,
-				u8 **pcmb_buffer, u8 *cmd_start_seq)
-{
-	u32 totallen = 0, len = 0, tx_desclen = 0;
-	u32 pre_continueoffset = 0;
-	u8 *ph2c_buffer;
-	u8 i = 0;
-
-	do {
-		/* 8 - Byte alignment */
-		len = H2C_TX_CMD_HDR_LEN + N_BYTE_ALIGMENT(pcmd_len[i], 8);
-
-		/* Buffer length is not enough */
-		if (h2cbufferlen < totallen + len + tx_desclen)
-			break;
-
-		/* Clear content */
-		ph2c_buffer = skb_put(skb, (u32)len);
-		memset((ph2c_buffer + totallen + tx_desclen), 0, len);
-
-		/* CMD len */
-		le32p_replace_bits((__le32 *)(ph2c_buffer + totallen +
-					      tx_desclen), pcmd_len[i],
-				   GENMASK(15, 0));
-
-		/* CMD ID */
-		le32p_replace_bits((__le32 *)(ph2c_buffer + totallen +
-					      tx_desclen), pelement_id[i],
-				   GENMASK(23, 16));
-
-		/* CMD Sequence */
-		*cmd_start_seq = *cmd_start_seq % 0x80;
-		le32p_replace_bits((__le32 *)(ph2c_buffer + totallen +
-					      tx_desclen), *cmd_start_seq,
-				   GENMASK(30, 24));
-		++*cmd_start_seq;
-
-		/* Copy memory */
-		memcpy((ph2c_buffer + totallen + tx_desclen +
-			H2C_TX_CMD_HDR_LEN), pcmb_buffer[i], pcmd_len[i]);
-
-		/* CMD continue */
-		/* set the continue in prevoius cmd. */
-		if (i < cmd_num - 1)
-			le32p_replace_bits((__le32 *)(ph2c_buffer +
-						      pre_continueoffset),
-					   1, BIT(31));
-
-		pre_continueoffset = totallen;
-
-		totallen += len;
-	} while (++i < cmd_num);
-
-	return totallen;
-}
-
-static u32 _rtl92s_get_h2c_cmdlen(u32 h2cbufferlen, u32 cmd_num, u32 *pcmd_len)
-{
-	u32 totallen = 0, len = 0, tx_desclen = 0;
-	u8 i = 0;
-
-	do {
-		/* 8 - Byte alignment */
-		len = H2C_TX_CMD_HDR_LEN + N_BYTE_ALIGMENT(pcmd_len[i], 8);
-
-		/* Buffer length is not enough */
-		if (h2cbufferlen < totallen + len + tx_desclen)
-			break;
-
-		totallen += len;
-	} while (++i < cmd_num);
-
-	return totallen + tx_desclen;
-}
-
-static bool _rtl92s_firmware_set_h2c_cmd(struct ieee80211_hw *hw, u8 h2c_cmd,
-					 u8 *pcmd_buffer)
+int rtl92s_firmware_set_h2c_cmd(struct ieee80211_hw *hw, u32 element_id,
+				u32 rsvd, u8 *pcmd_buffer, u32 cmd_len)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
-	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
+	struct rtl_hal *rtlhal = rtl_hal(rtlpriv);
 	struct rtl_tcb_desc *cb_desc;
 	struct sk_buff *skb;
-	u32	element_id = 0;
-	u32	cmd_len = 0;
-	u32	len;
+	unsigned long flags;
+	u32 payload_len;
+	u32 desc_len;
+	__le32 *header;
+	int ret = 0;
 
-	switch (h2c_cmd) {
-	case FW_H2C_SETPWRMODE:
-		element_id = H2C_SETPWRMODE_CMD ;
-		cmd_len = sizeof(struct h2c_set_pwrmode_parm);
-		break;
-	case FW_H2C_JOINBSSRPT:
-		element_id = H2C_JOINBSSRPT_CMD;
-		cmd_len = sizeof(struct h2c_joinbss_rpt_parm);
-		break;
-	case FW_H2C_WOWLAN_UPDATE_GTK:
-		element_id = H2C_WOWLAN_UPDATE_GTK_CMD;
-		cmd_len = sizeof(struct h2c_wpa_two_way_parm);
-		break;
-	case FW_H2C_WOWLAN_UPDATE_IV:
-		element_id = H2C_WOWLAN_UPDATE_IV_CMD;
-		cmd_len = sizeof(unsigned long long);
-		break;
-	case FW_H2C_WOWLAN_OFFLOAD:
-		element_id = H2C_WOWLAN_FW_OFFLOAD;
-		cmd_len = sizeof(u8);
-		break;
-	default:
-		break;
+	if (element_id > U8_MAX || cmd_len > U16_MAX ||
+	    (cmd_len && !pcmd_buffer))
+		return -EINVAL;
+	if (cmd_len > MAX_TRANSMIT_BUFFER_SIZE - H2C_TX_CMD_HDR_LEN)
+		return -EMSGSIZE;
+
+	payload_len = ALIGN(cmd_len, 8);
+	desc_len = rtlhal->interface == INTF_USB ? RTL_TX_HEADER_SIZE : 0;
+	if (payload_len > MAX_TRANSMIT_BUFFER_SIZE - H2C_TX_CMD_HDR_LEN)
+		return -EMSGSIZE;
+
+	spin_lock_irqsave(&rtlpriv->locks.h2c_lock, flags);
+	skb = alloc_skb(desc_len + H2C_TX_CMD_HDR_LEN + payload_len,
+			GFP_ATOMIC);
+	if (!skb) {
+		ret = -ENOMEM;
+		goto out;
 	}
+	skb_reserve(skb, desc_len);
+	header = (__le32 *)skb_put(skb, H2C_TX_CMD_HDR_LEN + payload_len);
+	memset(header, 0, H2C_TX_CMD_HDR_LEN + payload_len);
+	le32p_replace_bits(&header[0], cmd_len, GENMASK(15, 0));
+	le32p_replace_bits(&header[0], element_id, GENMASK(23, 16));
+	rtlhal->h2c_txcmd_seq %= 0x80;
+	le32p_replace_bits(&header[0], rtlhal->h2c_txcmd_seq,
+			   GENMASK(30, 24));
+	rtlhal->h2c_txcmd_seq++;
+	header[1] = cpu_to_le32(rsvd);
+	if (cmd_len)
+		memcpy(header + 2, pcmd_buffer, cmd_len);
 
-	len = _rtl92s_get_h2c_cmdlen(MAX_TRANSMIT_BUFFER_SIZE, 1, &cmd_len);
-	skb = dev_alloc_skb(len);
-	if (!skb)
-		return false;
-	cb_desc = (struct rtl_tcb_desc *)(skb->cb);
+	cb_desc = (struct rtl_tcb_desc *)skb->cb;
 	cb_desc->cmd_or_init = DESC_PACKET_TYPE_NORMAL;
 	cb_desc->last_inipkt = false;
-
-	_rtl92s_fill_h2c_cmd(skb, MAX_TRANSMIT_BUFFER_SIZE, 1, &element_id,
-			&cmd_len, &pcmd_buffer,	&rtlhal->h2c_txcmd_seq);
 	if (!rtl92s_cmd_send_packet(hw, skb)) {
 		kfree_skb(skb);
-		return false;
+		ret = -EIO;
+		goto out;
 	}
-	rtlpriv->cfg->ops->tx_polling(hw, RTL92S_TXCMD_QUEUE);
-
-	return true;
+	if (rtlhal->interface != INTF_USB)
+		rtlpriv->cfg->ops->tx_polling(hw, RTL92S_TXCMD_QUEUE);
+out:
+	spin_unlock_irqrestore(&rtlpriv->locks.h2c_lock, flags);
+	return ret;
 }
+EXPORT_SYMBOL_GPL(rtl92s_firmware_set_h2c_cmd);
 
 void rtl92s_set_fw_pwrmode_cmd(struct ieee80211_hw *hw, u8 mode)
 {
 	struct rtl_mac *mac = rtl_mac(rtl_priv(hw));
 	struct rtl_ps_ctl *ppsc = rtl_psc(rtl_priv(hw));
-	struct h2c_set_pwrmode_parm	pwrmode;
+	struct h2c_set_pwrmode_parm	pwrmode = {0};
 	u16 max_wakeup_period = 0;
 
 	pwrmode.mode = mode;
@@ -584,7 +561,8 @@ void rtl92s_set_fw_pwrmode_cmd(struct ieee80211_hw *hw, u8 mode)
 	else
 		pwrmode.bcn_pass_cnt = 1;
 
-	_rtl92s_firmware_set_h2c_cmd(hw, FW_H2C_SETPWRMODE, (u8 *)&pwrmode);
+	rtl92s_firmware_set_h2c_cmd(hw, H2C_SETPWRMODE_CMD, 0,
+				      (u8 *)&pwrmode, sizeof(pwrmode));
 
 }
 EXPORT_SYMBOL_GPL(rtl92s_set_fw_pwrmode_cmd);
@@ -593,7 +571,7 @@ void rtl92s_set_fw_joinbss_report_cmd(struct ieee80211_hw *hw,
 		u8 mstatus, u8 ps_qosinfo)
 {
 	struct rtl_mac *mac = rtl_mac(rtl_priv(hw));
-	struct h2c_joinbss_rpt_parm joinbss_rpt;
+	struct h2c_joinbss_rpt_parm joinbss_rpt = {0};
 
 	joinbss_rpt.opmode = mstatus;
 	joinbss_rpt.ps_qos_info = ps_qosinfo;
@@ -608,7 +586,9 @@ void rtl92s_set_fw_joinbss_report_cmd(struct ieee80211_hw *hw,
 	le16p_replace_bits((__le16 *)(((u8 *)(&joinbss_rpt) + 10)),
 			   mac->assoc_id, GENMASK(15, 0));
 
-	_rtl92s_firmware_set_h2c_cmd(hw, FW_H2C_JOINBSSRPT, (u8 *)&joinbss_rpt);
+	rtl92s_firmware_set_h2c_cmd(hw, H2C_JOINBSSRPT_CMD, 0,
+				      (u8 *)&joinbss_rpt,
+				      sizeof(joinbss_rpt));
 }
 EXPORT_SYMBOL_GPL(rtl92s_set_fw_joinbss_report_cmd);
 

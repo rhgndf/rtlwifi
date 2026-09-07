@@ -1049,23 +1049,6 @@ void rtl92se_update_interrupt_mask(struct ieee80211_hw *hw,
 	rtl92se_disable_interrupt(hw);
 	rtl92se_enable_interrupt(hw);
 }
-static void _rtl8192se_get_ic_inferiority(struct ieee80211_hw *hw)
-{
-	struct rtl_efuse *rtlefuse = rtl_efuse(rtl_priv(hw));
-	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
-	u8 efuse_id;
-
-	rtlhal->ic_class = IC_INFERIORITY_A;
-
-	/* Only retrieving while using EFUSE. */
-	if ((rtlefuse->epromtype == EEPROM_BOOT_EFUSE) &&
-		!rtlefuse->autoload_failflag) {
-		efuse_id = efuse_read_1byte(hw, EFUSE_IC_ID_OFFSET);
-
-		if (efuse_id == 0xfe)
-			rtlhal->ic_class = IC_INFERIORITY_B;
-	}
-}
 static void _rtl92se_read_adapter_info(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
@@ -1111,7 +1094,7 @@ static void _rtl92se_read_adapter_info(struct ieee80211_hw *hw)
 	if (rtlefuse->autoload_failflag)
 		return;
 
-	_rtl8192se_get_ic_inferiority(hw);
+	rtl92s_get_ic_inferiority(hw);
 
 	/* Read IC Version && Channel Plan */
 	/* VID, DID	 SE	0xA-D */

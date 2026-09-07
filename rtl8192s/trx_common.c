@@ -38,6 +38,8 @@ static void _rtl92s_query_rxphystatus(struct ieee80211_hw *hw,
 				       bool packet_beacon)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
+	struct rtl_phy *rtlphy = &rtlpriv->phy;
+	struct rtl_hal *rtlhal = rtl_hal(rtlpriv);
 	struct phy_sts_cck_8192s_t *cck_buf;
 	struct rtl_ps_ctl *ppsc = rtl_psc(rtlpriv);
 	s8 rx_pwr_all = 0, rx_pwr[4];
@@ -56,12 +58,16 @@ static void _rtl92s_query_rxphystatus(struct ieee80211_hw *hw,
 		u8 report, cck_highpwr;
 		cck_buf = (struct phy_sts_cck_8192s_t *)p_drvinfo;
 
-		if (ppsc->rfpwr_state == ERFON)
-			cck_highpwr = (u8) rtl_get_bbreg(hw,
+		if (ppsc->rfpwr_state == ERFON) {
+			if (rtlhal->interface == INTF_USB)
+				cck_highpwr = rtlphy->cck_high_power;
+			else
+				cck_highpwr = (u8)rtl_get_bbreg(hw,
 						RFPGA0_XA_HSSIPARAMETER2,
 						0x200);
-		else
+		} else {
 			cck_highpwr = false;
+		}
 
 		if (!cck_highpwr) {
 			u8 cck_agc_rpt = cck_buf->cck_agc_rpt;

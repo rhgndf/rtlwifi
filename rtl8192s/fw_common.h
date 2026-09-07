@@ -5,7 +5,7 @@
 #define __REALTEK_FIRMWARE92S_H__
 
 #define RTL8190_MAX_FIRMWARE_CODE_SIZE		64000
-#define RTL8190_MAX_RAW_FIRMWARE_CODE_SIZE	90000
+#define RTL8190_MAX_RAW_FIRMWARE_CODE_SIZE	0x20000
 #define RTL8190_CPU_START_OFFSET		0x80
 /* Firmware Local buffer size. 64k */
 #define	MAX_FIRMWARE_CODE_SIZE			0xFF00
@@ -150,28 +150,28 @@ struct fw_priv {
 struct fw_hdr {
 
 	/* --- LONG WORD 0 ---- */
-	u16 signature;
+	__le16 signature;
 	/* 0x8000 ~ 0x8FFF for FPGA version,
 	 * 0x0000 ~ 0x7FFF for ASIC version, */
-	u16 version;
+	__le16 version;
 	/* define the size of boot loader */
-	u32 dmem_size;
+	__le32 dmem_size;
 
 
 	/* --- LONG WORD 1 ---- */
 	/* define the size of FW in IMEM */
-	u32 img_imem_size;
+	__le32 img_imem_size;
 	/* define the size of FW in SRAM */
-	u32 img_sram_size;
+	__le32 img_sram_size;
 
 	/* --- LONG WORD 2 ---- */
 	/* define the size of DMEM variable */
-	u32 fw_priv_size;
-	u32 rsvd0;
+	__le32 fw_priv_size;
+	__le32 rsvd0;
 
 	/* --- LONG WORD 3 ---- */
-	u32 rsvd1;
-	u32 rsvd2;
+	__le32 rsvd1;
+	__le32 rsvd2;
 
 	struct fw_priv fwpriv;
 
@@ -253,13 +253,6 @@ struct h2c_wpa_two_way_parm {
 	struct h2c_wpa_ptk wpa_ptk_value;
 } ;
 
-enum h2c_cmd {
-	FW_H2C_SETPWRMODE = 0,
-	FW_H2C_JOINBSSRPT = 1,
-	FW_H2C_WOWLAN_UPDATE_GTK = 2,
-	FW_H2C_WOWLAN_UPDATE_IV = 3,
-	FW_H2C_WOWLAN_OFFLOAD = 4,
-};
 
 enum fw_h2c_cmd {
 	H2C_READ_MACREG_CMD,				/*0*/
@@ -344,6 +337,9 @@ enum fw_h2c_cmd {
 #define FW_CMD_IO_PARA_QUERY(rtlpriv)				\
 	((u32)(rtlpriv->rtlhal.fwcmd_ioparam))
 
+int rtl92s_validate_fw(const u8 *data, size_t size);
+int rtl92s_firmware_set_h2c_cmd(struct ieee80211_hw *hw, u32 element_id,
+				u32 rsvd, u8 *pcmd_buffer, u32 cmd_len);
 int rtl92s_download_fw(struct ieee80211_hw *hw);
 void rtl92s_set_fw_pwrmode_cmd(struct ieee80211_hw *hw, u8 mode);
 void rtl92s_set_fw_joinbss_report_cmd(struct ieee80211_hw *hw,

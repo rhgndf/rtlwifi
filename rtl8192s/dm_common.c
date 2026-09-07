@@ -353,6 +353,7 @@ void rtl92s_dm_init_edca_turbo(struct ieee80211_hw *hw)
 static void _rtl92s_dm_init_rate_adaptive_mask(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
+	struct rtl_hal *rtlhal = rtl_hal(rtlpriv);
 	struct rate_adaptive *ra = &(rtlpriv->ra);
 
 	ra->ratr_state = DM_RATR_STA_MAX;
@@ -363,8 +364,9 @@ static void _rtl92s_dm_init_rate_adaptive_mask(struct ieee80211_hw *hw)
 		rtlpriv->dm.useramask = true;
 	else
 		rtlpriv->dm.useramask = false;
-
-	rtlpriv->dm.useramask = false;
+	
+	/* USB register I/O may sleep, so rate updates must use its worker. */
+	rtlpriv->dm.useramask = rtlhal->interface == INTF_USB;
 	rtlpriv->dm.inform_fw_driverctrldm = false;
 }
 

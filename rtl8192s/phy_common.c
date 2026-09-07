@@ -838,6 +838,7 @@ static void _rtl92s_phy_get_txpower_index(struct ieee80211_hw *hw, u8 channel,
 					  u8 *cckpowerlevel, u8 *ofdmpowerlevel)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
+	struct rtl_hal *rtlhal = rtl_hal(rtlpriv);
 	struct rtl_phy *rtlphy = &(rtlpriv->phy);
 	struct rtl_efuse *rtlefuse = rtl_efuse(rtl_priv(hw));
 	u8 index = (channel - 1);
@@ -853,7 +854,9 @@ static void _rtl92s_phy_get_txpower_index(struct ieee80211_hw *hw, u8 channel,
 		/* Read HT 40 OFDM TX power */
 		ofdmpowerlevel[0] = rtlefuse->txpwrlevel_ht40_1s[0][index];
 		ofdmpowerlevel[1] = rtlefuse->txpwrlevel_ht40_1s[1][index];
-	} else if (rtlphy->rf_type == RF_2T2R) {
+	} else if (rtlphy->rf_type == RF_2T2R ||
+		   (rtlhal->interface == INTF_USB &&
+		    rtlphy->rf_type == RF_2T2R_GREEN)) {
 		/* Read HT 40 OFDM TX power */
 		ofdmpowerlevel[0] = rtlefuse->txpwrlevel_ht40_2s[0][index];
 		ofdmpowerlevel[1] = rtlefuse->txpwrlevel_ht40_2s[1][index];
@@ -1312,16 +1315,16 @@ bool rtl92s_phy_set_fw_cmd(struct ieee80211_hw *hw, enum fwcmd_iotype fw_cmdio)
 		}
 	} while (false);
 
-	/* We shall post processing these FW CMD if
-	 * variable postprocessing is set.
-	 */
-	if (postprocessing && !rtlhal->set_fwcmd_inprogress) {
-		rtlhal->set_fwcmd_inprogress = true;
-		/* Update current FW Cmd for callback use. */
-		rtlhal->current_fwcmd_io = fw_cmdio;
-	} else {
+	/* Commands handled through the FW I/O map complete synchronously. */
+	if (!postprocessing)
+		return true;
+
+	if (rtlhal->set_fwcmd_inprogress)
 		return false;
-	}
+
+	rtlhal->set_fwcmd_inprogress = true;
+	/* Update current FW Cmd for callback use. */
+	rtlhal->current_fwcmd_io = fw_cmdio;
 
 	return _rtl92s_phy_set_fwcmd_io(hw);
 }

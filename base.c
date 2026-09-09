@@ -194,7 +194,8 @@ static void _rtl_init_hw_ht_capab(struct ieee80211_hw *hw,
 		ht_cap->mcs.rx_highest = cpu_to_le16(MAX_BIT_RATE_40MHZ_MCS15);
 	} else {
 		if (get_rf_type(rtlphy) == RF_1T2R ||
-		    get_rf_type(rtlphy) == RF_2T2R) {
+		    get_rf_type(rtlphy) == RF_2T2R ||
+		    get_rf_type(rtlphy) == RF_2T2R_GREEN) {
 			rtl_dbg(rtlpriv, COMP_INIT, DBG_DMESG,
 				"1T2R or 2T2R\n");
 			ht_cap->mcs.rx_mask[0] = 0xFF;
@@ -213,6 +214,11 @@ static void _rtl_init_hw_ht_capab(struct ieee80211_hw *hw,
 			ht_cap->mcs.rx_highest =
 				 cpu_to_le16(MAX_BIT_RATE_40MHZ_MCS7);
 		}
+
+		if (get_rf_type(rtlphy) == RF_1T2R ||
+			get_rf_type(rtlphy) == RF_2T2R_GREEN)
+			ht_cap->mcs.tx_params |=
+				IEEE80211_HT_MCS_TX_RX_DIFF;
 	}
 }
 

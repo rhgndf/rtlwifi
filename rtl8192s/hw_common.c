@@ -638,7 +638,8 @@ static void rtl92s_update_hal_rate_table(struct ieee80211_hw *hw,
 			u32 ratr_mask;
 
 			if (get_rf_type(rtlphy) == RF_1T2R ||
-			    get_rf_type(rtlphy) == RF_1T1R) {
+			    get_rf_type(rtlphy) == RF_1T1R ||
+			    get_rf_type(rtlphy) == RF_2T2R_GREEN) {
 				if (curtxbw_40mhz)
 					ratr_mask = 0x000ff015;
 				else
@@ -654,7 +655,8 @@ static void rtl92s_update_hal_rate_table(struct ieee80211_hw *hw,
 		}
 		break;
 	default:
-		if (rtlphy->rf_type == RF_1T2R)
+		if (rtlphy->rf_type == RF_1T2R ||
+		    rtlphy->rf_type == RF_2T2R_GREEN)
 			ratr_value &= 0x000ff0ff;
 		else
 			ratr_value &= 0x0f0ff0ff;
@@ -776,7 +778,8 @@ static void rtl92s_update_hal_rate_mask(struct ieee80211_hw *hw,
 				ratr_bitmap &= 0x0007f005;
 		} else {
 			if (rtlphy->rf_type == RF_1T2R ||
-				rtlphy->rf_type == RF_1T1R) {
+			    rtlphy->rf_type == RF_1T1R ||
+			    rtlphy->rf_type == RF_2T2R_GREEN) {
 				if (rssi_level == 1) {
 						ratr_bitmap &= 0x000f0000;
 				} else if (rssi_level == 3) {
@@ -817,7 +820,8 @@ static void rtl92s_update_hal_rate_mask(struct ieee80211_hw *hw,
 		band |= (WIRELESS_11N | WIRELESS_11G | WIRELESS_11B);
 		ratr_index = RATR_INX_WIRELESS_NGB;
 
-		if (rtlphy->rf_type == RF_1T2R)
+		if (rtlphy->rf_type == RF_1T2R ||
+		    rtlphy->rf_type == RF_2T2R_GREEN)
 			ratr_bitmap &= 0x000ff0ff;
 		else
 			ratr_bitmap &= 0x0f8ff0ff;

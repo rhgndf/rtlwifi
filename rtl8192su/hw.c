@@ -612,10 +612,10 @@ static void _rtl92su_macconfig_after_fwdownload(struct ieee80211_hw *hw)
 	rtl_write_word(rtlpriv, REG_AGGLEN_LMT_L + 6, 0xfffb);
 
 	/* Set Data / Response auto rate fallack retry count */
-	rtl_write_dword(rtlpriv, REG_DARFRC, 0x01000000);
-	rtl_write_dword(rtlpriv, REG_DARFRC + 4, 0x07060504);
-	rtl_write_dword(rtlpriv, REG_RARFRC, 0x01000000);
-	rtl_write_dword(rtlpriv, REG_RARFRC + 4, 0x07060605);
+	rtl_write_dword(rtlpriv, REG_DARFRC, 0x02010000);
+	rtl_write_dword(rtlpriv, REG_DARFRC + 4, 0x06050403);
+	rtl_write_dword(rtlpriv, REG_RARFRC, 0x02010000);
+	rtl_write_dword(rtlpriv, REG_RARFRC + 4, 0x06050403);
 
 	/* 7. EDCA Setting Register (Offset: 0x01D0 - 0x01FF) */
 	/* Set all rate to support SG */

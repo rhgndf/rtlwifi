@@ -6,9 +6,9 @@
 #include "../core.h"
 #include "reg.h"
 #include "def.h"
-#include "phy.h"
-#include "dm.h"
-#include "fw.h"
+#include "phy_common.h"
+#include "dm_common.h"
+#include "fw_common.h"
 
 static const u32 edca_setting_dl[PEER_MAX] = {
 	0xa44f,		/* 0 UNKNOWN */
@@ -161,8 +161,7 @@ static void _rtl92s_dm_txpowertracking_callback_thermalmeter(
 			rtl_dbg(rtlpriv, COMP_POWER_TRACKING, DBG_LOUD,
 				"Write to FW Thermal Val = 0x%x\n", fw_cmd);
 
-			rtl_write_dword(rtlpriv, WFM5, fw_cmd);
-			rtl92s_phy_chk_fwcmd_iodone(hw);
+			rtl92s_phy_send_fw_cmd(hw, fw_cmd, NULL, true);
 		}
 	}
 
@@ -354,6 +353,7 @@ void rtl92s_dm_init_edca_turbo(struct ieee80211_hw *hw)
 static void _rtl92s_dm_init_rate_adaptive_mask(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
+	struct rtl_hal *rtlhal = rtl_hal(rtlpriv);
 	struct rate_adaptive *ra = &(rtlpriv->ra);
 
 	ra->ratr_state = DM_RATR_STA_MAX;
@@ -364,8 +364,9 @@ static void _rtl92s_dm_init_rate_adaptive_mask(struct ieee80211_hw *hw)
 		rtlpriv->dm.useramask = true;
 	else
 		rtlpriv->dm.useramask = false;
-
-	rtlpriv->dm.useramask = false;
+	
+	/* USB register I/O may sleep, so rate updates must use its worker. */
+	rtlpriv->dm.useramask = rtlhal->interface == INTF_USB;
 	rtlpriv->dm.inform_fw_driverctrldm = false;
 }
 
@@ -702,8 +703,9 @@ void rtl92s_dm_init(struct ieee80211_hw *hw)
 	_rtl92s_dm_init_txpowertracking_thermalmeter(hw);
 	_rtl92s_dm_init_dig(hw);
 
-	rtl_write_dword(rtlpriv, WFM5, FW_CCA_CHK_ENABLE);
+	rtl92s_phy_send_fw_cmd(hw, FW_CCA_CHK_ENABLE, NULL, false);
 }
+EXPORT_SYMBOL_GPL(rtl92s_dm_init);
 
 void rtl92s_dm_watchdog(struct ieee80211_hw *hw)
 {
@@ -714,4 +716,5 @@ void rtl92s_dm_watchdog(struct ieee80211_hw *hw)
 	_rtl92s_dm_refresh_rateadaptive_mask(hw);
 	_rtl92s_dm_switch_baseband_mrc(hw);
 }
+EXPORT_SYMBOL_GPL(rtl92s_dm_watchdog);
 

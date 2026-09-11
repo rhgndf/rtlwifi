@@ -12,9 +12,6 @@ void rtl92se_tx_fill_desc(struct ieee80211_hw *hw,
 			  struct rtl_tcb_desc *ptcb_desc);
 void rtl92se_tx_fill_cmddesc(struct ieee80211_hw *hw, u8 *pdesc,
 			     struct sk_buff *skb);
-bool rtl92se_rx_query_desc(struct ieee80211_hw *hw, struct rtl_stats *stats,
-			   struct ieee80211_rx_status *rx_status, u8 *pdesc,
-			   struct sk_buff *skb);
 void rtl92se_set_desc(struct ieee80211_hw *hw, u8 *pdesc, bool istx,
 		      u8 desc_name, u8 *val);
 u64 rtl92se_get_desc(struct ieee80211_hw *hw,

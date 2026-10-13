@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright(c) 2009-2012  Realtek Corporation.*/
 
-#include "table.h"
+#include "table_common.h"
 
 u32 rtl8192sephy_reg_2t2rarray[PHY_REG_2T2RARRAYLENGTH] = {
 	0x01c, 0x07000000,

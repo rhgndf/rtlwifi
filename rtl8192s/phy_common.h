@@ -62,7 +62,9 @@ bool rtl92s_phy_rf_config(struct ieee80211_hw *hw);
 void rtl92s_phy_get_hw_reg_originalvalue(struct ieee80211_hw *hw);
 void rtl92s_phy_set_txpower(struct ieee80211_hw *hw, u8 channel);
 bool rtl92s_phy_set_fw_cmd(struct ieee80211_hw *hw, enum fwcmd_iotype fwcmd_io);
-void rtl92s_phy_chk_fwcmd_iodone(struct ieee80211_hw *hw);
+bool rtl92s_phy_chk_fwcmd_iodone(struct ieee80211_hw *hw);
+bool rtl92s_phy_send_fw_cmd(struct ieee80211_hw *hw, u32 cmd,
+			    const u32 *data, bool wait);
 void rtl92s_phy_set_beacon_hwreg(struct ieee80211_hw *hw, u16 beaconinterval);
 u8 rtl92s_phy_config_rf(struct ieee80211_hw *hw, enum radio_path rfpath);
 

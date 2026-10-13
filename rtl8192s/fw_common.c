@@ -7,6 +7,40 @@
 #include "def.h"
 #include "fw_common.h"
 
+int rtl92s_validate_fw(const u8 *data, size_t size)
+{
+	const struct fw_hdr *header;
+	size_t remaining;
+	u32 length;
+
+	if (!data || size < sizeof(*header) ||
+	    size > RTL8190_MAX_RAW_FIRMWARE_CODE_SIZE)
+		return -EINVAL;
+
+	header = (const struct fw_hdr *)data;
+	if (le16_to_cpu(header->signature) != 0x8192 ||
+	    le32_to_cpu(header->fw_priv_size) != sizeof(header->fwpriv))
+		return -EINVAL;
+
+	remaining = size - sizeof(*header);
+	length = le32_to_cpu(header->img_imem_size);
+	if (!length || length > RTL8190_MAX_FIRMWARE_CODE_SIZE ||
+	    length > remaining)
+		return -EINVAL;
+	remaining -= length;
+
+	length = le32_to_cpu(header->img_sram_size);
+	if (length > RTL8190_MAX_FIRMWARE_CODE_SIZE || length > remaining)
+		return -EINVAL;
+	remaining -= length;
+
+	if (le32_to_cpu(header->dmem_size) > remaining)
+		return -EINVAL;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rtl92s_validate_fw);
+
 static void rtl92s_fw_set_rqpn(struct ieee80211_hw *hw)
 {
 	struct rt_firmware *firmware =
@@ -106,6 +140,8 @@ static u8 _rtl92s_firmware_header_map_rftype(struct ieee80211_hw *hw)
 		return 0x12;
 	case RF_2T2R:
 		return 0x22;
+	case RF_2T2R_GREEN:
+		return 0x92;
 	default:
 		pr_err("Unknown RF type(%x)\n", rtlphy->rf_type);
 		break;
@@ -116,8 +152,12 @@ static u8 _rtl92s_firmware_header_map_rftype(struct ieee80211_hw *hw)
 static void _rtl92s_firmwareheader_priveupdate(struct ieee80211_hw *hw,
 		struct fw_priv *pfw_priv)
 {
+	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
+
 	/* Update RF types for RATR settings. */
 	pfw_priv->rf_config = _rtl92s_firmware_header_map_rftype(hw);
+	/* 1: pcie, 2: usb */
+	pfw_priv->hci_sel = rtlhal->interface == INTF_USB ? 2 : 1;
 }
 
 
@@ -125,6 +165,7 @@ static void _rtl92s_firmwareheader_priveupdate(struct ieee80211_hw *hw,
 static bool _rtl92s_firmware_downloadcode(struct ieee80211_hw *hw,
 		u8 *code_virtual_address, u32 buffer_len)
 {
+	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
 	struct sk_buff *skb;
 	struct rtl_tcb_desc *tcb_desc;
 	u16 frag_threshold = MAX_FIRMWARE_CODE_SIZE;
@@ -139,7 +180,8 @@ static bool _rtl92s_firmware_downloadcode(struct ieee80211_hw *hw,
 		return false;
 	}
 
-	extra_descoffset = 0;
+	extra_descoffset = rtlhal->interface == INTF_USB ?
+				RTL_TX_HEADER_SIZE : 0;
 
 	do {
 		if ((buffer_len - frag_offset) > frag_threshold) {
@@ -206,6 +248,8 @@ static bool _rtl92s_firmware_checkready(struct ieee80211_hw *hw,
 		if (!(cpustatus & IMEM_CHK_RPT) || (pollingcnt <= 0)) {
 			pr_err("FW_STATUS_LOAD_IMEM FAIL CPU, Status=%x\n",
 			       cpustatus);
+			if (rtlhal->interface == INTF_USB)
+				rtstatus = false;
 			goto status_check_fail;
 		}
 		break;
@@ -223,6 +267,8 @@ static bool _rtl92s_firmware_checkready(struct ieee80211_hw *hw,
 		if (!(cpustatus & EMEM_CHK_RPT) || (pollingcnt <= 0)) {
 			pr_err("FW_STATUS_LOAD_EMEM FAIL CPU, Status=%x\n",
 			       cpustatus);
+			if (rtlhal->interface == INTF_USB)
+				rtstatus = false;
 			goto status_check_fail;
 		}
 
@@ -246,6 +292,8 @@ static bool _rtl92s_firmware_checkready(struct ieee80211_hw *hw,
 		if (!(cpustatus & DMEM_CODE_DONE) || (pollingcnt <= 0)) {
 			pr_err("Polling DMEM code done fail ! cpustatus(%#x)\n",
 			       cpustatus);
+			if (rtlhal->interface == INTF_USB)
+				rtstatus = false;
 			goto status_check_fail;
 		}
 
@@ -271,6 +319,8 @@ static bool _rtl92s_firmware_checkready(struct ieee80211_hw *hw,
 		    (pollingcnt <= 0)) {
 			pr_err("Polling Load Firmware ready fail ! cpustatus(%x)\n",
 			       cpustatus);
+			if (rtlhal->interface == INTF_USB)
+				rtstatus = false;
 			goto status_check_fail;
 		}
 
@@ -327,38 +377,38 @@ int rtl92s_download_fw(struct ieee80211_hw *hw)
 	/* 1. Retrieve FW header. */
 	firmware->pfwheader = (struct fw_hdr *) puc_mappedfile;
 	pfwheader = firmware->pfwheader;
-	firmware->firmwareversion =  byte(pfwheader->version, 0);
-	firmware->pfwheader->fwpriv.hci_sel = 1;/* pcie */
+	firmware->firmwareversion = byte(le16_to_cpu(pfwheader->version), 0);
 
 	rtl_dbg(rtlpriv, COMP_INIT, DBG_LOUD,
 		"signature:%x, version:%x, size:%x, imemsize:%x, sram size:%x\n",
-		pfwheader->signature,
-		pfwheader->version, pfwheader->dmem_size,
-		pfwheader->img_imem_size, pfwheader->img_sram_size);
+		le16_to_cpu(pfwheader->signature),
+		le16_to_cpu(pfwheader->version), le32_to_cpu(pfwheader->dmem_size),
+		le32_to_cpu(pfwheader->img_imem_size),
+		le32_to_cpu(pfwheader->img_sram_size));
 
 	/* 2. Retrieve IMEM image. */
-	if ((pfwheader->img_imem_size == 0) || (pfwheader->img_imem_size >
-	    sizeof(firmware->fw_imem))) {
+	firmware->fw_imem_len = le32_to_cpu(pfwheader->img_imem_size);
+	if (!firmware->fw_imem_len ||
+	    firmware->fw_imem_len > sizeof(firmware->fw_imem)) {
 		pr_err("memory for data image is less than IMEM required\n");
 		goto fail;
 	} else {
 		puc_mappedfile += fwhdr_size;
 
 		memcpy(firmware->fw_imem, puc_mappedfile,
-		       pfwheader->img_imem_size);
-		firmware->fw_imem_len = pfwheader->img_imem_size;
+		       firmware->fw_imem_len);
 	}
 
 	/* 3. Retriecve EMEM image. */
-	if (pfwheader->img_sram_size > sizeof(firmware->fw_emem)) {
+	firmware->fw_emem_len = le32_to_cpu(pfwheader->img_sram_size);
+	if (firmware->fw_emem_len > sizeof(firmware->fw_emem)) {
 		pr_err("memory for data image is less than EMEM required\n");
 		goto fail;
 	} else {
 		puc_mappedfile += firmware->fw_imem_len;
 
 		memcpy(firmware->fw_emem, puc_mappedfile,
-		       pfwheader->img_sram_size);
-		firmware->fw_emem_len = pfwheader->img_sram_size;
+		       firmware->fw_emem_len);
 	}
 
 	/* 4. download fw now */

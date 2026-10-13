@@ -638,7 +638,8 @@ static void rtl92s_update_hal_rate_table(struct ieee80211_hw *hw,
 			u32 ratr_mask;
 
 			if (get_rf_type(rtlphy) == RF_1T2R ||
-			    get_rf_type(rtlphy) == RF_1T1R) {
+			    get_rf_type(rtlphy) == RF_1T1R ||
+			    get_rf_type(rtlphy) == RF_2T2R_GREEN) {
 				if (curtxbw_40mhz)
 					ratr_mask = 0x000ff015;
 				else
@@ -654,7 +655,8 @@ static void rtl92s_update_hal_rate_table(struct ieee80211_hw *hw,
 		}
 		break;
 	default:
-		if (rtlphy->rf_type == RF_1T2R)
+		if (rtlphy->rf_type == RF_1T2R ||
+		    rtlphy->rf_type == RF_2T2R_GREEN)
 			ratr_value &= 0x000ff0ff;
 		else
 			ratr_value &= 0x0f0ff0ff;
@@ -719,6 +721,7 @@ static void rtl92s_update_hal_rate_mask(struct ieee80211_hw *hw,
 	bool bmulticast = false;
 	u8 macid = 0;
 	u8 mimo_ps = IEEE80211_SMPS_OFF;
+	struct rtl92s_rate_mask_h2c rate_mask;
 
 	sta_entry = (struct rtl_sta_info *) sta->drv_priv;
 	wirelessmode = sta_entry->wireless_mode;
@@ -775,7 +778,8 @@ static void rtl92s_update_hal_rate_mask(struct ieee80211_hw *hw,
 				ratr_bitmap &= 0x0007f005;
 		} else {
 			if (rtlphy->rf_type == RF_1T2R ||
-				rtlphy->rf_type == RF_1T1R) {
+			    rtlphy->rf_type == RF_1T1R ||
+			    rtlphy->rf_type == RF_2T2R_GREEN) {
 				if (rssi_level == 1) {
 						ratr_bitmap &= 0x000f0000;
 				} else if (rssi_level == 3) {
@@ -816,7 +820,8 @@ static void rtl92s_update_hal_rate_mask(struct ieee80211_hw *hw,
 		band |= (WIRELESS_11N | WIRELESS_11G | WIRELESS_11B);
 		ratr_index = RATR_INX_WIRELESS_NGB;
 
-		if (rtlphy->rf_type == RF_1T2R)
+		if (rtlphy->rf_type == RF_1T2R ||
+		    rtlphy->rf_type == RF_2T2R_GREEN)
 			ratr_bitmap &= 0x000ff0ff;
 		else
 			ratr_bitmap &= 0x0f8ff0ff;
@@ -840,15 +845,25 @@ static void rtl92s_update_hal_rate_mask(struct ieee80211_hw *hw,
 
 		shortgi_rate = (shortgi_rate << 12) | (shortgi_rate << 8) |
 			(shortgi_rate << 4) | (shortgi_rate);
-		rtl_write_byte(rtlpriv, SG_RATE, shortgi_rate);
+		if (rtlhal->interface != INTF_USB)
+			rtl_write_byte(rtlpriv, SG_RATE, shortgi_rate);
 	}
 
 	mask |= (bmulticast ? 1 : 0) << 9 | (macid & 0x1f) << 4 | (band & 0xf);
 
 	rtl_dbg(rtlpriv, COMP_RATR, DBG_TRACE, "mask = %x, bitmap = %x\n",
 		mask, ratr_bitmap);
-	rtl_write_dword(rtlpriv, 0x2c4, ratr_bitmap);
-	rtl_write_dword(rtlpriv, WFM5, (FW_RA_UPDATE_MASK | (mask << 8)));
+	if (rtlhal->interface == INTF_USB) {
+		rate_mask.ratr_bitmap = cpu_to_le32(ratr_bitmap);
+		rate_mask.mask = cpu_to_le16(mask);
+		rate_mask.shortgi_rate = shortgi_rate;
+		rtlpriv->cfg->ops->fill_h2c_cmd(hw, H2C_RA_MASK,
+					       sizeof(rate_mask),
+					       (u8 *)&rate_mask);
+	} else {
+		rtl92s_phy_send_fw_cmd(hw, FW_RA_UPDATE_MASK | (mask << 8),
+				       &ratr_bitmap, false);
+	}
 
 	if (macid != 0)
 		sta_entry->ratr_index = ratr_index;
@@ -1004,3 +1019,22 @@ void rtl92s_set_key(struct ieee80211_hw *hw, u32 key_index, u8 *p_macaddr,
 	}
 }
 EXPORT_SYMBOL_GPL(rtl92s_set_key);
+
+void rtl92s_get_ic_inferiority(struct ieee80211_hw *hw)
+{
+	struct rtl_efuse *rtlefuse = rtl_efuse(rtl_priv(hw));
+	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
+	u8 efuse_id;
+
+	rtlhal->ic_class = IC_INFERIORITY_A;
+
+	/* Only retrieving while using EFUSE. */
+	if (rtlefuse->epromtype == EEPROM_BOOT_EFUSE &&
+	    !rtlefuse->autoload_failflag) {
+		efuse_id = efuse_read_1byte(hw, EFUSE_IC_ID_OFFSET);
+
+		if (efuse_id == 0xfe)
+			rtlhal->ic_class = IC_INFERIORITY_B;
+	}
+}
+EXPORT_SYMBOL_GPL(rtl92s_get_ic_inferiority);

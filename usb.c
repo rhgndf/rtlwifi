@@ -481,11 +481,16 @@ static void _rtl_rx_work(struct tasklet_struct *t)
 {
 	struct rtl_usb *rtlusb = from_tasklet(rtlusb, t, rx_work_tasklet);
 	struct ieee80211_hw *hw = usb_get_intfdata(rtlusb->intf);
+	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct sk_buff *skb;
 
 	while ((skb = skb_dequeue(&rtlusb->rx_queue))) {
 		if (unlikely(IS_USB_STOP(rtlusb))) {
 			dev_kfree_skb_any(skb);
+			continue;
+		}
+		if (rtlpriv->rtlhal.hw_type == HARDWARE_TYPE_RTL8192SU) {
+			rtlusb->usb_rx_hdl(hw, skb);
 			continue;
 		}
 

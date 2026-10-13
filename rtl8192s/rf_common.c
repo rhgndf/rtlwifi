@@ -4,9 +4,9 @@
 #include "../wifi.h"
 #include "reg.h"
 #include "def.h"
-#include "phy.h"
-#include "rf.h"
-#include "dm.h"
+#include "phy_common.h"
+#include "rf_common.h"
+#include "dm_common.h"
 
 
 static void _rtl92s_get_powerbase(struct ieee80211_hw *hw, u8 *p_pwrlevel,
@@ -413,29 +413,29 @@ bool rtl92s_phy_rf6052_config(struct ieee80211_hw *hw)
 		switch (rfpath) {
 		case RF90_PATH_A:
 		case RF90_PATH_C:
-			u4reg_val = rtl92s_phy_query_bb_reg(hw,
+			u4reg_val = rtl_get_bbreg(hw,
 							    pphyreg->rfintfs,
 							    BRFSI_RFENV);
 			break;
 		case RF90_PATH_B:
 		case RF90_PATH_D:
-			u4reg_val = rtl92s_phy_query_bb_reg(hw,
+			u4reg_val = rtl_get_bbreg(hw,
 							    pphyreg->rfintfs,
 							    BRFSI_RFENV << 16);
 			break;
 		}
 
 		/* Set RF_ENV enable */
-		rtl92s_phy_set_bb_reg(hw, pphyreg->rfintfe,
+		rtl_set_bbreg(hw, pphyreg->rfintfe,
 				      BRFSI_RFENV << 16, 0x1);
 
 		/* Set RF_ENV output high */
-		rtl92s_phy_set_bb_reg(hw, pphyreg->rfintfo, BRFSI_RFENV, 0x1);
+		rtl_set_bbreg(hw, pphyreg->rfintfo, BRFSI_RFENV, 0x1);
 
 		/* Set bit number of Address and Data for RF register */
-		rtl92s_phy_set_bb_reg(hw, pphyreg->rfhssi_para2,
+		rtl_set_bbreg(hw, pphyreg->rfhssi_para2,
 				B3WIRE_ADDRESSLENGTH, 0x0);
-		rtl92s_phy_set_bb_reg(hw, pphyreg->rfhssi_para2,
+		rtl_set_bbreg(hw, pphyreg->rfhssi_para2,
 				B3WIRE_DATALENGTH, 0x0);
 
 		/* Initialize RF from configuration file */
@@ -458,12 +458,12 @@ bool rtl92s_phy_rf6052_config(struct ieee80211_hw *hw)
 		switch (rfpath) {
 		case RF90_PATH_A:
 		case RF90_PATH_C:
-			rtl92s_phy_set_bb_reg(hw, pphyreg->rfintfs, BRFSI_RFENV,
+			rtl_set_bbreg(hw, pphyreg->rfintfs, BRFSI_RFENV,
 					      u4reg_val);
 			break;
 		case RF90_PATH_B:
 		case RF90_PATH_D:
-			rtl92s_phy_set_bb_reg(hw, pphyreg->rfintfs,
+			rtl_set_bbreg(hw, pphyreg->rfintfs,
 					      BRFSI_RFENV << 16,
 					      u4reg_val);
 			break;
